@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Painel Sala Nitro</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--bg:var(--tg-theme-bg-color,#0f1115);--card:var(--tg-theme-secondary-bg-color,#1a1d24);--tx:var(--tg-theme-text-color,#e8eaed);
+--mut:var(--tg-theme-hint-color,#8b93a1);--ac:var(--tg-theme-button-color,#7c5cff);--actx:var(--tg-theme-button-text-color,#fff);
+--up:#22c55e;--dn:#ef4444;--gold:#f59e0b;--line:rgba(127,127,127,.18)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;padding:12px 14px 28px}
+h1{font-size:18px;margin:2px 0 10px;display:flex;align-items:center;gap:8px}
+.seg{display:flex;background:var(--card);border-radius:12px;padding:4px;gap:4px;position:sticky;top:0;z-index:5;margin-bottom:12px}
+.seg button{flex:1;border:0;background:none;color:var(--mut);padding:9px 4px;border-radius:9px;font:600 14px inherit;font-family:inherit}
+.seg button.on{background:var(--ac);color:var(--actx)}
+.card{background:var(--card);border-radius:14px;padding:12px 14px;margin-bottom:10px}
+.tot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.tot b{display:block;font-size:16px;margin-top:2px}
+.k{color:var(--mut);font-size:12px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.cod{font-weight:700;font-size:16px;letter-spacing:.3px}
+.pct{font-weight:700;font-size:16px}
+.up{color:var(--up)}.dn{color:var(--dn)}.gold{color:var(--gold)}
+.bar{height:8px;background:var(--line);border-radius:99px;margin:10px 0 6px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--ac);transition:width .4s}
+.bar i.meta{background:var(--gold)}
+.sm{font-size:13px;color:var(--mut)}
+.btn{border:0;border-radius:10px;padding:10px 12px;font:600 14px inherit;font-family:inherit;background:var(--ac);color:var(--actx);width:100%}
+.btn.ghost{background:transparent;color:var(--ac);border:1px solid var(--ac)}
+.btn.mini{width:auto;padding:7px 11px;font-size:13px}
+.btn.del{background:transparent;color:var(--dn);border:1px solid var(--dn)}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+input{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font:600 16px inherit;font-family:inherit}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{border:1px solid var(--line);background:var(--bg);color:var(--tx);border-radius:99px;padding:6px 10px;font-size:13px}
+.hint{background:var(--bg);border-radius:10px;padding:10px;margin-top:10px;font-size:14px}
+.vazio{text-align:center;color:var(--mut);padding:24px 8px}
+.top{display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px}
+.toast{position:fixed;left:14px;right:14px;bottom:16px;background:#111;color:#fff;padding:12px;border-radius:12px;font-size:14px;display:none}
+.hide{display:none}
+</style>
+</head>
+<body>
+<h1>📊 Painel Sala Nitro</h1>
+<div class="seg">
+  <button data-t="cart" class="on">💼 Carteira</button>
+  <button data-t="alr">🔔 Alertas</button>
+  <button data-t="novo">➕ Novo</button>
+</div>
+
+<section id="cart">
+  <div class="card tot">
+    <div><span class="k">Investido</span><b id="tInv">—</b></div>
+    <div><span class="k">Valor agora</span><b id="tAgo">—</b></div>
+    <div><span class="k">Resultado</span><b id="tRes">—</b></div>
+  </div>
+  <div class="top"><span class="sm" id="upd">Buscando cotações…</span><button class="btn ghost mini" id="ref">↻ Atualizar</button></div>
+  <div id="lista"></div>
+  <p class="sm">Cotação do site da B3, ~15 min de atraso. Sem custos/impostos. Confira no home broker antes de operar.</p>
+</section>
+
+<section id="alr" class="hide"><div id="alertas"></div></section>
+
+<section id="novo" class="hide">
+  <div class="card">
+    <label for="fCod">Ação ou opção</label>
+    <input id="fCod" placeholder="ex.: PETR4 ou PETRX524" autocapitalize="characters" autocomplete="off">
+    <label for="fVal">Avisar quando chegar a (R$)</label>
+    <input id="fVal" placeholder="ex.: 3,50" inputmode="decimal" autocomplete="off">
+    <div class="hint" id="prev">Digite o código para ver o preço atual.</div>
+    <div class="chips" id="chips"></div>
+    <div style="height:12px"></div>
+    <button class="btn" id="criar">Criar alerta</button>
+  </div>
+</section>
+<div class="toast" id="toast"></div>
+
+<script>
+const tg = window.Telegram && Telegram.WebApp; tg && (tg.ready(), tg.expand());
+const $ = s => document.querySelector(s);
+const br = x => x == null ? "—" : x.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const sinal = x => (x >= 0 ? "+" : "") + br(x);
+const cls = x => x >= 0 ? "up" : "dn";
+// estado vem do bot no link: #d=base64url({"p":[[código,pago,lote]...],"a":[[código,valor,acima]...]})
+let D = {p: [], a: []};
+try { const s = (location.hash.match(/d=([\w-]+)/) || [])[1]; if (s) D = JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/"))); } catch (e) {}
+const ok = c => /^[A-Z0-9]{4,12}$/.test(c);  // o estado vai para innerHTML: só códigos B3 válidos
+D.p = (D.p || []).filter(p => ok(p[0]) && p[1] > 0); D.a = (D.a || []).filter(a => ok(a[0]));
+const PX = {};
+
+async function px(c) {
+  try {
+    const j = await (await fetch("https://cotacao.b3.com.br/mds/api/v1/instrumentQuotation/" + encodeURIComponent(c))).json();
+    const q = j.Trad[0].scty.SctyQtn; return {ult: q.curPrc, max: q.maxPric};
+  } catch (e) { return null; }
+}
+
+function envia(cmd, txt) {
+  tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred("success");
+  if (tg && tg.sendData && tg.initData) tg.sendData(cmd);  // fecha o painel; o bot confirma na conversa
+  else toast("Fora do Telegram. Comando: " + cmd);
+}
+function toast(t) { const el = $("#toast"); el.textContent = t; el.style.display = "block"; setTimeout(() => el.style.display = "none", 3500); }
+
+function aba(t) {
+  document.querySelectorAll(".seg button").forEach(b => b.classList.toggle("on", b.dataset.t === t));
+  ["cart", "alr", "novo"].forEach(id => $("#" + id).classList.toggle("hide", id !== t));
+  tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
+}
+document.querySelectorAll(".seg button").forEach(b => b.onclick = () => aba(b.dataset.t));
+
+function carteira() {
+  let inv = 0, ago = 0;
+  $("#lista").innerHTML = D.p.length ? D.p.map(([c, pago, lote]) => {
+    const q = PX[c], ult = q && q.ult, pct = ult ? (ult / pago - 1) * 100 : null, pmax = q && q.max ? (q.max / pago - 1) * 100 : null;
+    inv += pago * lote; ago += (ult || pago) * lote;
+    const fill = pct == null ? 0 : Math.max(0, Math.min(100, pct / 80 * 100));
+    return `<div class="card">
+      <div class="row"><span class="cod">${c}</span><span class="pct ${pct == null ? "" : cls(pct)}">${pct == null ? "sem negócio hoje" : sinal(pct) + "%"}</span></div>
+      <div class="row sm"><span>Pago R$ ${br(pago)} → agora <b style="color:var(--tx)">R$ ${br(ult)}</b></span><span>${lote} un.</span></div>
+      <div class="bar"><i class="${pct >= 80 ? "meta" : ""}" style="width:${fill}%"></i></div>
+      <div class="row sm"><span>${pct >= 80 ? '<b class="gold">🎯 Bateu +80%</b>' : `Meta +80%: R$ ${br(pago * 1.8)}`}${pmax != null ? ` · máx. hoje R$ ${br(q.max)} (${sinal(pmax)}%)` : ""}</span>
+      <button class="btn ghost mini" onclick="prefill('${c}',${(pago * 1.8).toFixed(2)})">🔔 Alertar</button></div>
+    </div>`;
+  }).join("") : `<div class="vazio">Nenhuma posição aberta enviada pelo bot.</div>`;
+  const res = ago - inv;
+  $("#tInv").textContent = "R$ " + br(inv); $("#tAgo").textContent = "R$ " + br(ago);
+  $("#tRes").innerHTML = `<span class="${cls(res)}">${sinal(res)}</span><span class="k" style="display:block">${inv ? sinal(res / inv * 100) + "%" : ""}</span>`;
+}
+
+function alertas() {
+  $("#alertas").innerHTML = D.a.length ? D.a.map(([c, v, acima]) => {
+    const q = PX[c], ult = q && q.ult, falta = ult ? (v / ult - 1) * 100 : null;
+    return `<div class="card"><div class="row"><span class="cod">${c}</span><span class="pct">${acima ? "≥" : "≤"} R$ ${br(v)}</span></div>
+      <div class="row sm" style="margin-top:6px"><span>Agora R$ ${br(ult)}${falta != null ? ` · falta ${sinal(falta)}%` : ""}</span>
+      <button class="btn del mini" onclick="remover('${c}')">Remover</button></div></div>`;
+  }).join("") : `<div class="vazio">Nenhum alerta ativo.<br><br><button class="btn mini" onclick="aba('novo')">➕ Criar alerta</button></div>`;
+}
+
+function remover(c) {
+  const ok = () => envia("/remover " + c);
+  tg && tg.showConfirm ? tg.showConfirm(`Remover o alerta de ${c}?`, r => r && ok()) : ok();
+}
+function prefill(c, v) { $("#fCod").value = c; $("#fVal").value = br(v); aba("novo"); previa(); }
+
+let prevTimer;
+async function previa() {
+  const c = $("#fCod").value.trim().toUpperCase(), v = parseFloat($("#fVal").value.replace(/\./g, "").replace(",", "."));
+  if (!c) { $("#prev").textContent = "Digite o código para ver o preço atual."; return; }
+  const q = PX[c] || await px(c); if (q) PX[c] = q;
+  if (!q) { $("#prev").innerHTML = `<span class="dn">Não achei ${c} na B3.</span>`; return; }
+  $("#prev").innerHTML = `Agora: <b>R$ ${br(q.ult)}</b>` + (isNaN(v) ? "" :
+    `<br>Vai avisar quando <b>${v >= q.ult ? "SUBIR" : "CAIR"}</b> a R$ ${br(v)} (${sinal((v / q.ult - 1) * 100)}%).`);
+}
+["fCod", "fVal"].forEach(id => $("#" + id).addEventListener("input", () => { clearTimeout(prevTimer); prevTimer = setTimeout(previa, 400); }));
+
+$("#chips").innerHTML = D.p.map(([c, pago]) => `<button class="chip" onclick="prefill('${c}',${(pago * 1.8).toFixed(2)})">+80% ${c}</button>`).join("");
+$("#criar").onclick = () => {
+  const c = $("#fCod").value.trim().toUpperCase().replace(/\s+/g, ""), v = parseFloat($("#fVal").value.replace(/\./g, "").replace(",", "."));
+  if (!/^[A-Z0-9]{4,12}$/.test(c) || !(v > 0)) return toast("Preencha o código e um valor maior que zero.");
+  envia(`/alerta ${c} ${br(v)}`);
+};
+
+async function atualiza() {
+  $("#upd").textContent = "Buscando cotações…";
+  const cods = [...new Set([...D.p.map(p => p[0]), ...D.a.map(a => a[0])])];
+  (await Promise.all(cods.map(px))).forEach((q, i) => { if (q) PX[cods[i]] = q; });
+  carteira(); alertas();
+  $("#upd").textContent = "Atualizado às " + new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"});
+}
+$("#ref").onclick = atualiza;
+carteira(); alertas(); atualiza(); setInterval(atualiza, 60000);
+</script>
+</body>
+</html>
