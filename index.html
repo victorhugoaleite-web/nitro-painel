@@ -12,6 +12,8 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;padding:12px 14px 28px}
 h1{font-size:18px;margin:2px 0 10px;display:flex;align-items:center;gap:8px}
+h2{font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin:16px 2px 8px}
+.tag{font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;margin-left:6px;vertical-align:2px;background:var(--line);color:var(--mut)}
 .seg{display:flex;background:var(--card);border-radius:12px;padding:4px;gap:4px;position:sticky;top:0;z-index:5;margin-bottom:12px}
 .seg button{flex:1;border:0;background:none;color:var(--mut);padding:9px 4px;border-radius:9px;font:600 14px inherit;font-family:inherit}
 .seg button.on{background:var(--ac);color:var(--actx)}
@@ -52,12 +54,16 @@ input{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);ba
 
 <section id="cart">
   <div class="card tot">
-    <div><span class="k">Investido</span><b id="tInv">—</b></div>
+    <div><span class="k">Investido (abertas)</span><b id="tInv">—</b></div>
     <div><span class="k">Valor agora</span><b id="tAgo">—</b></div>
-    <div><span class="k">Resultado</span><b id="tRes">—</b></div>
+    <div><span class="k">Em aberto</span><b id="tRes">—</b></div>
   </div>
+  <div class="card" id="real"></div>
   <div class="top"><span class="sm" id="upd">Buscando cotações…</span><button class="btn ghost mini" id="ref">↻ Atualizar</button></div>
+  <h2 id="hAb"></h2>
   <div id="lista"></div>
+  <h2 id="hFe"></h2>
+  <div id="fechadas"></div>
   <p class="sm">Cotação do site da B3, ~15 min de atraso. Sem custos/impostos. Confira no home broker antes de operar.</p>
 </section>
 
@@ -83,11 +89,14 @@ const $ = s => document.querySelector(s);
 const br = x => x == null ? "—" : x.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const sinal = x => (x >= 0 ? "+" : "") + br(x);
 const cls = x => x >= 0 ? "up" : "dn";
+const rs = x => (x >= 0 ? "+R$ " : "−R$ ") + br(Math.abs(x));
 // estado vem do bot no link: #d=base64url({"p":[[código,pago,lote]...],"a":[[código,valor,acima]...]})
 let D = {p: [], a: []};
 try { const s = (location.hash.match(/d=([\w-]+)/) || [])[1]; if (s) D = JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/"))); } catch (e) {}
 const ok = c => /^[A-Z0-9]{4,12}$/.test(c);  // o estado vai para innerHTML: só códigos B3 válidos
 D.p = (D.p || []).filter(p => ok(p[0]) && p[1] > 0); D.a = (D.a || []).filter(a => ok(a[0]));
+D.f = (D.f || []).filter(f => ok(f[0]) && f[1] > 0 && /^[\d/]*$/.test(f[4] || ""));  // [código, pago, vendido, lote, data_final]
+const META = 1050;  // pagar a assinatura da sala (3 x R$ 350)
 const PX = {};
 
 async function px(c) {
@@ -125,9 +134,21 @@ function carteira() {
       <button class="btn ghost mini" onclick="prefill('${c}',${(pago * 1.8).toFixed(2)})">🔔 Alertar</button></div>
     </div>`;
   }).join("") : `<div class="vazio">Nenhuma posição aberta enviada pelo bot.</div>`;
+  $("#hAb").textContent = `Abertas (${D.p.length})`;
+  let real = 0;
+  $("#fechadas").innerHTML = D.f.map(([c, pago, venda, lote, data]) => {
+    const pct = (venda / pago - 1) * 100, lucro = (venda - pago) * lote; real += lucro;
+    return `<div class="card"><div class="row"><span class="cod">${c}<span class="tag">ENCERRADA</span></span><span class="pct ${cls(pct)}">${sinal(pct)}%</span></div>
+      <div class="row sm" style="margin-top:4px"><span>Pago R$ ${br(pago)} → vendido <b style="color:var(--tx)">R$ ${br(venda)}</b></span><span>${data ? "em " + data.slice(0, 5) : ""}</span></div>
+      <div class="row sm" style="margin-top:4px"><span>${lote} un.</span><b class="${cls(lucro)}">${rs(lucro)}</b></div></div>`;
+  }).join("") || `<div class="vazio">Nenhuma operação encerrada ainda.</div>`;
+  $("#hFe").textContent = `Encerradas (${D.f.length})`;
+  $("#real").innerHTML = `<div class="row"><span class="k">Lucro realizado (encerradas)</span><b class="${cls(real)}">${rs(real)}</b></div>
+    <div class="bar"><i class="${real >= META ? "meta" : ""}" style="width:${Math.max(0, Math.min(100, real / META * 100))}%"></i></div>
+    <div class="sm">${real >= META ? "🎯 Assinatura paga!" : `Meta da assinatura: R$ ${br(META)} · faltam R$ ${br(META - real)} (${br(real / META * 100)}% feito)`}</div>`;
   const res = ago - inv;
   $("#tInv").textContent = "R$ " + br(inv); $("#tAgo").textContent = "R$ " + br(ago);
-  $("#tRes").innerHTML = `<span class="${cls(res)}">${sinal(res)}</span><span class="k" style="display:block">${inv ? sinal(res / inv * 100) + "%" : ""}</span>`;
+  $("#tRes").innerHTML = `<span class="${cls(res)}">${rs(res)}</span><span class="k" style="display:block">${inv ? sinal(res / inv * 100) + "%" : ""}</span>`;
 }
 
 function alertas() {
