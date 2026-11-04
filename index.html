@@ -108,7 +108,8 @@ async function px(c) {
 
 function envia(cmd, txt) {
   tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred("success");
-  if (tg && tg.sendData && tg.initData) tg.sendData(cmd);  // fecha o painel; o bot confirma na conversa
+  // aberto pelo botão do teclado o initData vem VAZIO (é assim que o sendData funciona): checa a plataforma
+  if (tg && tg.sendData && tg.platform && tg.platform !== "unknown") tg.sendData(cmd);  // fecha o painel; o bot confirma na conversa
   else toast("Fora do Telegram. Comando: " + cmd);
 }
 function toast(t) { const el = $("#toast"); el.textContent = t; el.style.display = "block"; setTimeout(() => el.style.display = "none", 3500); }
