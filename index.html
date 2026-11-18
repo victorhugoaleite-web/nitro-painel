@@ -15,7 +15,8 @@ h1{font-size:18px;margin:2px 0 10px;display:flex;align-items:center;gap:8px}
 h2{font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin:16px 2px 8px}
 .tag{font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;margin-left:6px;vertical-align:2px;background:var(--line);color:var(--mut)}
 .seg{display:flex;background:var(--card);border-radius:12px;padding:4px;gap:4px;position:sticky;top:0;z-index:5;margin-bottom:12px}
-.seg button{flex:1;border:0;background:none;color:var(--mut);padding:9px 4px;border-radius:9px;font:600 14px inherit;font-family:inherit}
+button,input{font:inherit;line-height:normal}
+.seg button{flex:1;border:0;background:none;color:var(--mut);padding:9px 4px;border-radius:9px;font-weight:600;font-size:14px}
 .seg button.on{background:var(--ac);color:var(--actx)}
 .card{background:var(--card);border-radius:14px;padding:12px 14px;margin-bottom:10px}
 .tot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
@@ -29,12 +30,12 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);
 .bar i{display:block;height:100%;border-radius:99px;background:var(--ac);transition:width .4s}
 .bar i.meta{background:var(--gold)}
 .sm{font-size:13px;color:var(--mut)}
-.btn{border:0;border-radius:10px;padding:10px 12px;font:600 14px inherit;font-family:inherit;background:var(--ac);color:var(--actx);width:100%}
+.btn{border:0;border-radius:10px;padding:10px 12px;font-weight:600;font-size:14px;background:var(--ac);color:var(--actx);width:100%}
 .btn.ghost{background:transparent;color:var(--ac);border:1px solid var(--ac)}
 .btn.mini{width:auto;padding:7px 11px;font-size:13px}
 .btn.del{background:transparent;color:var(--dn);border:1px solid var(--dn)}
 label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
-input{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font:600 16px inherit;font-family:inherit}
+input{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font-weight:600;font-size:16px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chip{border:1px solid var(--line);background:var(--bg);color:var(--tx);border-radius:99px;padding:6px 10px;font-size:13px}
 .hint{background:var(--bg);border-radius:10px;padding:10px;margin-top:10px;font-size:14px}
@@ -85,18 +86,37 @@ input{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);ba
 
 <script>
 const tg = window.Telegram && Telegram.WebApp; tg && (tg.ready(), tg.expand());
+// o script do Telegram também carrega fora dele, mas aí platform é "unknown" e sendData/showConfirm não funcionam
+const dentroDoTelegram = !!(tg && tg.platform && tg.platform !== "unknown");
 const $ = s => document.querySelector(s);
 const br = x => x == null ? "—" : x.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const sinal = x => (x >= 0 ? "+" : "") + br(x);
 const cls = x => x >= 0 ? "up" : "dn";
 const rs = x => (x >= 0 ? "+R$ " : "−R$ ") + br(Math.abs(x));
-// estado vem do bot no link: #d=base64url({"p":[[código,pago,lote]...],"a":[[código,valor,acima]...]})
-let D = {p: [], a: []};
-try { const s = (location.hash.match(/d=([\w-]+)/) || [])[1]; if (s) D = JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/"))); } catch (e) {}
-const ok = c => /^[A-Z0-9]{4,12}$/.test(c);  // o estado vai para innerHTML: só códigos B3 válidos
-D.p = (D.p || []).filter(p => ok(p[0]) && p[1] > 0); D.a = (D.a || []).filter(a => ok(a[0]));
-D.f = (D.f || []).filter(f => ok(f[0]) && f[1] > 0 && /^[\d/]*$/.test(f[4] || ""));  // [código, pago, vendido, lote, data_final]
+const num = s => parseFloat(s.replace(/\./g, "").replace(",", "."));  // "1.234,50" -> 1234.5
+const ok = c => /^[A-Z0-9]{4,12}$/.test(c);
+const barra = (pct, bateu) => `<div class="bar"><i class="${bateu ? "meta" : ""}" style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>`;
+const ALVO = 80;  // meta de lucro de cada posição, em %
+const alvo = pago => pago * (1 + ALVO / 100);
+const alertar = (c, pago) => `prefill('${c}',${alvo(pago).toFixed(2)})`;
 const META = 1050;  // pagar a assinatura da sala (3 x R$ 350)
+
+// estado vem do bot no link: #d=base64url({"p":[[código,pago,lote]...],"a":[[código,valor,acima]...],"f":[[código,pago,vendido,lote,data]...]})
+// tudo vai para innerHTML, então só passam códigos B3 válidos e números de verdade
+function estado() {
+  let d;
+  try { const s = (location.hash.match(/d=([\w-]+)/) || [])[1]; d = s && JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/"))); } catch (e) {}
+  d = d || {};
+  const linhas = (l, nums) => (Array.isArray(l) ? l : []).filter(Array.isArray)
+    .map(r => r.map((x, i) => nums.includes(i) ? Number(x) : x))
+    .filter(r => ok(r[0]) && nums.every(i => Number.isFinite(r[i])));
+  return {
+    p: linhas(d.p, [1, 2]).filter(p => p[1] > 0),
+    a: linhas(d.a, [1]),
+    f: linhas(d.f, [1, 2, 3]).filter(f => f[1] > 0 && (!f[4] || typeof f[4] === "string" && /^[\d/]*$/.test(f[4]))),
+  };
+}
+const D = estado();
 const PX = {};
 
 async function px(c) {
@@ -106,36 +126,41 @@ async function px(c) {
   } catch (e) { return null; }
 }
 
-function envia(cmd, txt) {
+function envia(cmd) {
   tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred("success");
-  // aberto pelo botão do teclado o initData vem VAZIO (é assim que o sendData funciona): checa a plataforma
-  if (tg && tg.sendData && tg.platform && tg.platform !== "unknown") tg.sendData(cmd);  // fecha o painel; o bot confirma na conversa
+  // aberto pelo botão do teclado o initData vem VAZIO (é assim que o sendData funciona): por isso a checagem é pela plataforma
+  if (dentroDoTelegram) tg.sendData(cmd);  // fecha o painel; o bot confirma na conversa
   else toast("Fora do Telegram. Comando: " + cmd);
 }
 function toast(t) { const el = $("#toast"); el.textContent = t; el.style.display = "block"; setTimeout(() => el.style.display = "none", 3500); }
 
+const abas = document.querySelectorAll(".seg button");
 function aba(t) {
-  document.querySelectorAll(".seg button").forEach(b => b.classList.toggle("on", b.dataset.t === t));
-  ["cart", "alr", "novo"].forEach(id => $("#" + id).classList.toggle("hide", id !== t));
+  abas.forEach(b => { b.classList.toggle("on", b.dataset.t === t); $("#" + b.dataset.t).classList.toggle("hide", b.dataset.t !== t); });
   tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
 }
-document.querySelectorAll(".seg button").forEach(b => b.onclick = () => aba(b.dataset.t));
+abas.forEach(b => b.onclick = () => aba(b.dataset.t));
 
 function carteira() {
   let inv = 0, ago = 0;
   $("#lista").innerHTML = D.p.length ? D.p.map(([c, pago, lote]) => {
     const q = PX[c], ult = q && q.ult, pct = ult ? (ult / pago - 1) * 100 : null, pmax = q && q.max ? (q.max / pago - 1) * 100 : null;
     inv += pago * lote; ago += (ult || pago) * lote;
-    const fill = pct == null ? 0 : Math.max(0, Math.min(100, pct / 80 * 100));
     return `<div class="card">
       <div class="row"><span class="cod">${c}</span><span class="pct ${pct == null ? "" : cls(pct)}">${pct == null ? "sem negócio hoje" : sinal(pct) + "%"}</span></div>
       <div class="row sm"><span>Pago R$ ${br(pago)} → agora <b style="color:var(--tx)">R$ ${br(ult)}</b></span><span>${lote} un.</span></div>
-      <div class="bar"><i class="${pct >= 80 ? "meta" : ""}" style="width:${fill}%"></i></div>
-      <div class="row sm"><span>${pct >= 80 ? '<b class="gold">🎯 Bateu +80%</b>' : `Meta +80%: R$ ${br(pago * 1.8)}`}${pmax != null ? ` · máx. hoje R$ ${br(q.max)} (${sinal(pmax)}%)` : ""}</span>
-      <button class="btn ghost mini" onclick="prefill('${c}',${(pago * 1.8).toFixed(2)})">🔔 Alertar</button></div>
+      ${barra(pct / ALVO * 100, pct >= ALVO)}
+      <div class="row sm"><span>${pct >= ALVO ? `<b class="gold">🎯 Bateu +${ALVO}%</b>` : `Meta +${ALVO}%: R$ ${br(alvo(pago))}`}${pmax != null ? ` · máx. hoje R$ ${br(q.max)} (${sinal(pmax)}%)` : ""}</span>
+      <button class="btn ghost mini" onclick="${alertar(c, pago)}">🔔 Alertar</button></div>
     </div>`;
   }).join("") : `<div class="vazio">Nenhuma posição aberta enviada pelo bot.</div>`;
   $("#hAb").textContent = `Abertas (${D.p.length})`;
+  const res = ago - inv;
+  $("#tInv").textContent = "R$ " + br(inv); $("#tAgo").textContent = "R$ " + br(ago);
+  $("#tRes").innerHTML = `<span class="${cls(res)}">${rs(res)}</span><span class="k" style="display:block">${inv ? sinal(res / inv * 100) + "%" : ""}</span>`;
+}
+
+function encerradas() {
   let real = 0;
   $("#fechadas").innerHTML = D.f.map(([c, pago, venda, lote, data]) => {
     const pct = (venda / pago - 1) * 100, lucro = (venda - pago) * lote; real += lucro;
@@ -145,11 +170,8 @@ function carteira() {
   }).join("") || `<div class="vazio">Nenhuma operação encerrada ainda.</div>`;
   $("#hFe").textContent = `Encerradas (${D.f.length})`;
   $("#real").innerHTML = `<div class="row"><span class="k">Lucro realizado (encerradas)</span><b class="${cls(real)}">${rs(real)}</b></div>
-    <div class="bar"><i class="${real >= META ? "meta" : ""}" style="width:${Math.max(0, Math.min(100, real / META * 100))}%"></i></div>
+    ${barra(real / META * 100, real >= META)}
     <div class="sm">${real >= META ? "🎯 Assinatura paga!" : `Meta da assinatura: R$ ${br(META)} · faltam R$ ${br(META - real)} (${br(real / META * 100)}% feito)`}</div>`;
-  const res = ago - inv;
-  $("#tInv").textContent = "R$ " + br(inv); $("#tAgo").textContent = "R$ " + br(ago);
-  $("#tRes").innerHTML = `<span class="${cls(res)}">${rs(res)}</span><span class="k" style="display:block">${inv ? sinal(res / inv * 100) + "%" : ""}</span>`;
 }
 
 function alertas() {
@@ -162,14 +184,15 @@ function alertas() {
 }
 
 function remover(c) {
-  const ok = () => envia("/remover " + c);
-  tg && tg.showConfirm ? tg.showConfirm(`Remover o alerta de ${c}?`, r => r && ok()) : ok();
+  const vai = () => envia("/remover " + c);
+  dentroDoTelegram && tg.isVersionAtLeast("6.2") ? tg.showConfirm(`Remover o alerta de ${c}?`, r => r && vai()) : vai();
 }
 function prefill(c, v) { $("#fCod").value = c; $("#fVal").value = br(v); aba("novo"); previa(); }
 
+const form = () => ({c: $("#fCod").value.toUpperCase().replace(/\s+/g, ""), v: num($("#fVal").value)});
 let prevTimer;
 async function previa() {
-  const c = $("#fCod").value.trim().toUpperCase(), v = parseFloat($("#fVal").value.replace(/\./g, "").replace(",", "."));
+  const {c, v} = form();
   if (!c) { $("#prev").textContent = "Digite o código para ver o preço atual."; return; }
   const q = PX[c] || await px(c); if (q) PX[c] = q;
   if (!q) { $("#prev").innerHTML = `<span class="dn">Não achei ${c} na B3.</span>`; return; }
@@ -178,10 +201,10 @@ async function previa() {
 }
 ["fCod", "fVal"].forEach(id => $("#" + id).addEventListener("input", () => { clearTimeout(prevTimer); prevTimer = setTimeout(previa, 400); }));
 
-$("#chips").innerHTML = D.p.map(([c, pago]) => `<button class="chip" onclick="prefill('${c}',${(pago * 1.8).toFixed(2)})">+80% ${c}</button>`).join("");
+$("#chips").innerHTML = D.p.map(([c, pago]) => `<button class="chip" onclick="${alertar(c, pago)}">+${ALVO}% ${c}</button>`).join("");
 $("#criar").onclick = () => {
-  const c = $("#fCod").value.trim().toUpperCase().replace(/\s+/g, ""), v = parseFloat($("#fVal").value.replace(/\./g, "").replace(",", "."));
-  if (!/^[A-Z0-9]{4,12}$/.test(c) || !(v > 0)) return toast("Preencha o código e um valor maior que zero.");
+  const {c, v} = form();
+  if (!ok(c) || !(v > 0)) return toast("Preencha o código e um valor maior que zero.");
   envia(`/alerta ${c} ${br(v)}`);
 };
 
@@ -193,7 +216,7 @@ async function atualiza() {
   $("#upd").textContent = "Atualizado às " + new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"});
 }
 $("#ref").onclick = atualiza;
-carteira(); alertas(); atualiza(); setInterval(atualiza, 60000);
+encerradas(); carteira(); alertas(); atualiza(); setInterval(atualiza, 60000);
 </script>
 </body>
 </html>
